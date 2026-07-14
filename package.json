@@ -5,12 +5,13 @@
   "description": "Rekados Merchant web app — grocery/store partners manage catalog and fulfill ingredient orders.",
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev --port 3002",
+    "dev": "nuxt dev --port 3005",
     "build": "nuxt build",
     "preview": "nuxt preview",
     "generate": "nuxt generate",
     "postinstall": "nuxt prepare",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "start": "node .output/server/index.mjs"
   },
   "dependencies": {
     "@pinia/nuxt": "^0.5.5",
@@ -28,6 +29,6 @@
     "vue-tsc": "^2.1.6"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   }
 }

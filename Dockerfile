@@ -17,10 +17,10 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV NITRO_PORT=3002
+ENV NITRO_PORT=3005
 ENV NITRO_HOST=0.0.0.0
 # Override at runtime to point at your deployed backend.
-ENV NUXT_PUBLIC_API_BASE=http://localhost:3001/api/v1
+ENV NUXT_PUBLIC_API_BASE=http://localhost:4004/api/v1
 
 # Only the built output is needed at runtime.
 COPY --from=build /app/.output ./.output
@@ -28,5 +28,5 @@ COPY --from=build /app/.output ./.output
 # Run as the built-in non-root node user.
 USER node
 
-EXPOSE 3002
+EXPOSE 3005
 CMD ["node", ".output/server/index.mjs"]

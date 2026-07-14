@@ -21,7 +21,7 @@ single core API, [`rekados-backend`](#talking-to-rekados-backend) (NestJS).
 - **Tailwind CSS** (`@nuxtjs/tailwindcss`) — emerald/slate "business" theme, dark-mode friendly
 - **nuxt-security** — hardened CSP, HSTS, frame-guard, and other headers
 - **Node 20**
-- Default dev port **3002**
+- Default dev port **3005**
 
 ---
 
@@ -61,7 +61,7 @@ token theft via XSS. Consequences that shape this codebase:
 
 - **`composables/useApi.ts`** — wraps `$fetch` with `credentials: 'include'` and a
   base URL from `runtimeConfig.public.apiBase` (`NUXT_PUBLIC_API_BASE`, default
-  `http://localhost:3001/api/v1`). On a `401` it attempts a single
+  `http://localhost:4004/api/v1`). On a `401` it attempts a single
   `POST /auth/refresh` (which rotates the cookies server-side) and retries the
   request once; if it still fails, it redirects to `/login`. Concurrent 401s share
   one in-flight refresh.
@@ -96,7 +96,7 @@ everything.
 ## Talking to `rekados-backend`
 
 - Set `NUXT_PUBLIC_API_BASE` to the backend's base URL (default
-  `http://localhost:3001/api/v1`).
+  `http://localhost:4004/api/v1`).
 - The SPA calls the backend **directly** with credentialed requests (it does not
   proxy through Nitro), so the backend must send `Access-Control-Allow-Origin`
   for this app's origin **and** `Access-Control-Allow-Credentials: true`, and set
@@ -140,7 +140,7 @@ npm install
 cp .env.example .env
 # edit NUXT_PUBLIC_API_BASE if your backend is elsewhere
 
-# 3. Run the dev server (http://localhost:3002)
+# 3. Run the dev server (http://localhost:3005)
 npm run dev
 ```
 
@@ -148,7 +148,7 @@ npm run dev
 
 | Script | Description |
 | --- | --- |
-| `npm run dev` | Dev server on **port 3002** |
+| `npm run dev` | Dev server on **port 3005** |
 | `npm run build` | Production build (Nitro server output) |
 | `npm run preview` | Preview the production build |
 | `npm run generate` | Static generation |
@@ -158,11 +158,11 @@ npm run dev
 
 ```bash
 docker build -t rekados-merchant .
-docker run -p 3002:3002 -e NUXT_PUBLIC_API_BASE=https://api.example.com/api/v1 rekados-merchant
+docker run -p 3005:3005 -e NUXT_PUBLIC_API_BASE=https://api.example.com/api/v1 rekados-merchant
 ```
 
 The container starts the Nitro server with `node .output/server/index.mjs` on port
-3002.
+3005.
 
 ---
 
