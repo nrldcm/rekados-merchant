@@ -17,9 +17,18 @@ interface NavItem {
 // `perms`. `mainOnly` items (branch management) hide on a sub-branch context.
 const NAV: NavItem[] = [
   { to: '/app', label: 'Dashboard', icon: '▤', perms: ['dashboard:view'], exact: true },
+  { to: '/app/sales', label: 'Sales', icon: '₱', perms: ['sales:view'] },
   { to: '/app/orders', label: 'Orders', icon: '✽', perms: ['orders:view'] },
+  { to: '/app/transactions', label: 'Transactions', icon: '⇄', perms: ['transactions:view'] },
   { to: '/app/inventory', label: 'Inventory', icon: '▦', perms: ['inventory:view'] },
   { to: '/app/catalog', label: 'Rekados', icon: '🍳', perms: ['catalog:view'] },
+  { to: '/app/returns', label: 'Returns', icon: '↩', perms: ['returns:view'] },
+  { to: '/app/refunds', label: 'Refunds', icon: '⤺', perms: ['refunds:view'] },
+  { to: '/app/reports', label: 'Reports', icon: '◫', perms: ['reports:view'] },
+  { to: '/app/reviews', label: 'Reviews', icon: '★', perms: ['reviews:view'] },
+  { to: '/app/kyc', label: 'KYC', icon: '🛡', perms: ['kyc:view'] },
+  { to: '/app/branches', label: 'Branch Management', icon: '🏢', perms: ['branch:view'], mainOnly: true },
+  { to: '/app/users', label: 'User Management', icon: '👥', perms: ['users:view'] },
   { to: '/app/settings', label: 'Settings', icon: '⚙', perms: [] },
 ]
 
