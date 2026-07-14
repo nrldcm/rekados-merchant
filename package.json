@@ -1,0 +1,33 @@
+{
+  "name": "rekados-merchant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rekados Merchant web app — grocery/store partners manage catalog and fulfill ingredient orders.",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --port 3002",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "generate": "nuxt generate",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.5.5",
+    "nuxt": "^3.13.0",
+    "nuxt-security": "^2.0.0",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^0.5.7",
+    "@nuxtjs/tailwindcss": "^6.12.1",
+    "eslint": "^9.11.0",
+    "typescript": "^5.6.2",
+    "vue-tsc": "^2.1.6"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,136 @@
+<script setup lang="ts">
+import { isValidEmail } from '~/utils/validation'
+
+definePageMeta({ layout: 'default' })
+useHead({ title: 'Merchant login — Rekados' })
+
+const auth = useAuthStore()
+const route = useRoute()
+
+const email = ref('')
+const password = ref('')
+
+const errors = reactive<{ email?: string; password?: string }>({})
+const formError = ref<string | null>(null)
+const submitting = ref(false)
+
+// Set when the backend returns 403 (email not verified) — enables resend link.
+const unverified = ref(false)
+const resendState = ref<'idle' | 'sending' | 'sent'>('idle')
+
+// If the auth middleware redirected here due to a role mismatch.
+const denied = computed(() => route.query.denied === '1')
+
+const validate = () => {
+  errors.email = isValidEmail(email.value) ? undefined : 'Enter a valid email address.'
+  errors.password = password.value ? undefined : 'Enter your password.'
+  return !errors.email && !errors.password
+}
+
+const handleSubmit = async () => {
+  formError.value = null
+  unverified.value = false
+  if (!validate()) return
+
+  submitting.value = true
+  try {
+    await auth.login({ email: email.value.trim(), password: password.value })
+    const redirect = (route.query.redirect as string) || '/app'
+    await navigateTo(redirect)
+  } catch (err: unknown) {
+    const status = (err as { statusCode?: number })?.statusCode
+    if (status === 403) {
+      // Backend convention: 403 on login == email not verified.
+      unverified.value = true
+      formError.value = 'Your email address has not been verified yet.'
+    } else if (status === 401) {
+      formError.value = 'Invalid email or password.'
+    } else {
+      formError.value = (err as { message?: string })?.message || 'Unable to sign in. Please try again.'
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+const resendVerification = async () => {
+  resendState.value = 'sending'
+  try {
+    const api = useApi()
+    // OTP contract: request a verification email for this address.
+    await api.post('/otp/request', { channel: 'EMAIL', purpose: 'EMAIL_VERIFICATION', email: email.value.trim() })
+    resendState.value = 'sent'
+  } catch {
+    resendState.value = 'idle'
+    formError.value = 'Could not resend the verification email. Try again shortly.'
+  }
+}
+</script>
+
+<template>
+  <AuthCard title="Merchant login" subtitle="Access your Rekados partner dashboard.">
+    <div
+      v-if="denied"
+      class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300"
+      role="alert"
+    >
+      That account isn’t a merchant account. Sign in with a Rekados merchant login.
+    </div>
+
+    <form novalidate @submit.prevent="handleSubmit">
+      <div class="space-y-4">
+        <TextField
+          v-model="email"
+          label="Email"
+          name="email"
+          type="email"
+          autocomplete="email"
+          placeholder="you@store.com"
+          :required="true"
+          :error="errors.email"
+        />
+        <PasswordField
+          v-model="password"
+          label="Password"
+          name="password"
+          autocomplete="current-password"
+          :required="true"
+          :error="errors.password"
+        />
+
+        <div class="flex justify-end">
+          <NuxtLink to="/forgot-password" class="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
+            Forgot password?
+          </NuxtLink>
+        </div>
+
+        <div
+          v-if="formError"
+          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300"
+          role="alert"
+        >
+          {{ formError }}
+          <button
+            v-if="unverified && resendState !== 'sent'"
+            type="button"
+            class="ml-1 font-medium underline disabled:opacity-60"
+            :disabled="resendState === 'sending'"
+            @click="resendVerification"
+          >
+            {{ resendState === 'sending' ? 'Sending…' : 'Resend verification email' }}
+          </button>
+          <span v-else-if="unverified && resendState === 'sent'" class="ml-1 font-medium">Verification email sent.</span>
+        </div>
+
+        <Button type="submit" :loading="submitting" :block="true">Sign in</Button>
+      </div>
+    </form>
+
+    <template #footer>
+      New to Rekados?
+      <NuxtLink to="/register" class="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
+        Apply to become a partner
+      </NuxtLink>
+    </template>
+  </AuthCard>
+</template>
