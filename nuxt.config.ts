@@ -19,7 +19,7 @@ export default defineNuxtConfig({
     // Public keys are exposed to the client. NEVER put secrets here.
     public: {
       // Base URL of the shared rekados-backend (NestJS). Override with NUXT_PUBLIC_API_BASE.
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:4004/api/v1',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api/v1',
     },
   },
 
