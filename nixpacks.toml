@@ -1,0 +1,20 @@
+# Nixpacks deploy config for Rekados — deterministic build/start.
+# Nuxt 3 merchant app. build=nuxt build.
+# NPM_CONFIG_PRODUCTION=false ensures build-time devDependencies are installed
+# even when the platform sets NODE_ENV=production (otherwise 'npm run build' fails).
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm install --include=dev --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node .output/server/index.mjs"
+
+[variables]
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
