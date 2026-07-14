@@ -1,21 +1,22 @@
 import type { FetchOptions } from 'ofetch'
+import { encryptedFetch } from './useCrypto'
 
 /**
- * useApi — thin wrapper around $fetch for talking to rekados-backend.
+ * useApi — wrapper around the E2E-encrypted transport for talking to
+ * rekados-backend.
  *
  * Auth model (shared across all Rekados web apps):
  *  - The backend issues httpOnly, secure, sameSite cookies for the access and
  *    refresh tokens. JS CANNOT read them (XSS-resistant), so we NEVER touch
  *    tokens here — we simply send cookies with `credentials: 'include'`.
- *  - On a 401 we attempt a single POST /auth/refresh (which rotates the cookies
- *    server-side) and retry the original request once. If it still fails, we
- *    redirect to /login.
+ *  - Every request/response body is E2E-encrypted (see useCrypto / backend).
+ *  - On a 401 we attempt a single POST /auth/refresh (rotates the cookies) and
+ *    retry the original request once. If it still fails, we redirect to /login.
  *
  * Base URL comes from runtimeConfig.public.apiBase (NUXT_PUBLIC_API_BASE).
  */
 
-// Endpoints that must NOT trigger the refresh-and-retry loop.
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout', '/auth/register']
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout', '/auth/register', '/auth/signup', '/auth/verify-email']
 
 export interface ApiError extends Error {
   statusCode: number
@@ -29,23 +30,17 @@ const makeApiError = (message: string, statusCode: number, data?: unknown): ApiE
   return err
 }
 
-// Module-scoped so parallel 401s share a single in-flight refresh.
-// (Not stored in useState — a pending Promise isn't SSR-serializable.)
 let inflightRefresh: Promise<boolean> | null = null
 
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseURL = config.public.apiBase
+  const baseURL = config.public.apiBase as string
 
   const tryRefresh = async (): Promise<boolean> => {
     if (inflightRefresh) return inflightRefresh
     inflightRefresh = (async () => {
       try {
-        await $fetch('/auth/refresh', {
-          baseURL,
-          method: 'POST',
-          credentials: 'include',
-        })
+        await encryptedFetch(baseURL, '/auth/refresh', { method: 'POST', credentials: 'include' })
         return true
       } catch {
         return false
@@ -57,35 +52,33 @@ export const useApi = () => {
   }
 
   const request = async <T>(path: string, options: FetchOptions = {}): Promise<T> => {
-    const opts: FetchOptions = {
-      baseURL,
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        ...(options.headers || {}),
-      },
-      ...options,
-    }
+    const send = () =>
+      encryptedFetch<T>(baseURL, path, {
+        method: (options.method as string) || 'GET',
+        body: (options as { body?: unknown }).body,
+        headers: (options.headers as Record<string, string> | undefined),
+        credentials: 'include',
+      })
 
     const skipRefresh = NO_REFRESH_PATHS.some((p) => path.startsWith(p))
 
     try {
-      return (await $fetch<T>(path, opts as FetchOptions)) as T
+      return await send()
     } catch (error: unknown) {
       const status = (error as { statusCode?: number; status?: number })?.statusCode
+        ?? (error as { status?: number })?.status
         ?? (error as { response?: { status?: number } })?.response?.status
         ?? 0
       const data = (error as { data?: unknown })?.data
 
-      // Attempt refresh-and-retry exactly once for protected requests.
       if (status === 401 && !skipRefresh) {
         const refreshed = await tryRefresh()
         if (refreshed) {
           try {
-            return (await $fetch<T>(path, opts as FetchOptions)) as T
+            return await send()
           } catch (retryError: unknown) {
-            const retryStatus = (retryError as { statusCode?: number })?.statusCode
-              ?? (retryError as { response?: { status?: number } })?.response?.status
+            const retryStatus = (retryError as { statusCode?: number; status?: number })?.statusCode
+              ?? (retryError as { status?: number })?.status
               ?? 0
             if (retryStatus === 401 && import.meta.client) {
               await navigateTo('/login')
@@ -97,7 +90,6 @@ export const useApi = () => {
             )
           }
         }
-        // Refresh failed → session is gone.
         if (import.meta.client) await navigateTo('/login')
       }
 
@@ -105,7 +97,6 @@ export const useApi = () => {
     }
   }
 
-  // Convenience verbs.
   const get = <T>(path: string, options?: FetchOptions) =>
     request<T>(path, { ...options, method: 'GET' })
   const post = <T>(path: string, body?: unknown, options?: FetchOptions) =>
@@ -120,7 +111,6 @@ export const useApi = () => {
   return { request, get, post, put, patch, del, baseURL }
 }
 
-// Pull a human message out of a NestJS-style error payload.
 function extractMessage(error: unknown): string {
   const data = (error as { data?: { message?: string | string[] } })?.data
   if (data?.message) {
