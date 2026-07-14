@@ -35,6 +35,9 @@ let inflightRefresh: Promise<boolean> | null = null
 export const useApi = () => {
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase as string
+  // Active branch for the merchant console. Sent as X-Branch-Id so the backend
+  // scopes every query to that branch (main sees all, sub is locked to its own).
+  const activeBranch = useCookie<string | null>('rk_active_branch', { sameSite: 'lax', path: '/' })
 
   const tryRefresh = async (): Promise<boolean> => {
     if (inflightRefresh) return inflightRefresh
@@ -52,11 +55,13 @@ export const useApi = () => {
   }
 
   const request = async <T>(path: string, options: FetchOptions = {}): Promise<T> => {
+    const branchHeader =
+      activeBranch.value ? { 'X-Branch-Id': activeBranch.value } : {}
     const send = () =>
       encryptedFetch<T>(baseURL, path, {
         method: (options.method as string) || 'GET',
         body: (options as { body?: unknown }).body,
-        headers: (options.headers as Record<string, string> | undefined),
+        headers: { ...branchHeader, ...(options.headers as Record<string, string> | undefined) },
         credentials: 'include',
       })
 

@@ -18,6 +18,10 @@ const submitting = ref(false)
 const unverified = ref(false)
 const resendState = ref<'idle' | 'sending' | 'sent'>('idle')
 
+// MFA second step (set when login returns a challenge).
+const mfaChallenge = ref<{ challengeToken: string; method: string } | null>(null)
+const mfaCode = ref('')
+
 // If the auth middleware redirected here due to a role mismatch.
 const denied = computed(() => route.query.denied === '1')
 
@@ -34,7 +38,12 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
-    await auth.login({ email: email.value.trim(), password: password.value })
+    const result = await auth.login({ email: email.value.trim(), password: password.value })
+    if (result.mfaRequired) {
+      // Second factor required — reveal the code step instead of navigating.
+      mfaChallenge.value = { challengeToken: result.challengeToken, method: result.method }
+      return
+    }
     const redirect = (route.query.redirect as string) || '/app'
     await navigateTo(redirect)
   } catch (err: unknown) {
@@ -48,6 +57,21 @@ const handleSubmit = async () => {
     } else {
       formError.value = (err as { message?: string })?.message || 'Unable to sign in. Please try again.'
     }
+  } finally {
+    submitting.value = false
+  }
+}
+
+const submitMfa = async () => {
+  if (!mfaChallenge.value) return
+  formError.value = null
+  submitting.value = true
+  try {
+    await auth.completeMfa(mfaChallenge.value.challengeToken, mfaCode.value.trim())
+    const redirect = (route.query.redirect as string) || '/app'
+    await navigateTo(redirect)
+  } catch (err: unknown) {
+    formError.value = (err as { message?: string })?.message || 'Invalid verification code.'
   } finally {
     submitting.value = false
   }
@@ -78,7 +102,41 @@ const resendVerification = async () => {
       That account isn’t a merchant account. Sign in with a Rekados merchant login.
     </div>
 
-    <form novalidate @submit.prevent="handleSubmit">
+    <!-- MFA second step -->
+    <form v-if="mfaChallenge" novalidate @submit.prevent="submitMfa">
+      <div class="space-y-4">
+        <p class="text-sm text-slate-600 dark:text-slate-300">
+          Enter the code from your
+          {{ mfaChallenge.method === 'TOTP' ? 'authenticator app' : mfaChallenge.method === 'SMS' ? 'phone (SMS)' : 'email' }}.
+          You can also use a backup code.
+        </p>
+        <TextField
+          v-model="mfaCode"
+          label="Verification code"
+          name="mfaCode"
+          autocomplete="one-time-code"
+          placeholder="123456"
+          :required="true"
+        />
+        <div
+          v-if="formError"
+          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300"
+          role="alert"
+        >
+          {{ formError }}
+        </div>
+        <Button type="submit" :loading="submitting" :block="true">Verify &amp; sign in</Button>
+        <button
+          type="button"
+          class="w-full text-center text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400"
+          @click="mfaChallenge = null"
+        >
+          Back
+        </button>
+      </div>
+    </form>
+
+    <form v-else novalidate @submit.prevent="handleSubmit">
       <div class="space-y-4">
         <TextField
           v-model="email"

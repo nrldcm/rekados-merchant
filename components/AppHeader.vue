@@ -92,12 +92,12 @@ const handleLogout = async () => {
             </span>
           </div>
           <NuxtLink
-            to="/app/profile"
+            to="/app/settings"
             class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
             role="menuitem"
             @click="menuOpen = false"
           >
-            Store profile
+            Account settings
           </NuxtLink>
           <button
             type="button"

@@ -60,12 +60,36 @@ export const useAuthStore = defineStore('auth', () => {
     if (!initialized.value) await fetchMe()
   }
 
-  const login = async (payload: LoginPayload): Promise<AuthUser> => {
+  /**
+   * Login. If the account has MFA enabled the backend returns a challenge
+   * instead of a session — we surface that so the UI can prompt for the code,
+   * then completeMfa() finishes the login.
+   */
+  const login = async (
+    payload: LoginPayload,
+  ): Promise<
+    | { mfaRequired: true; challengeToken: string; method: string }
+    | { mfaRequired: false; user: AuthUser }
+  > => {
     const api = useApi()
-    // Backend sets httpOnly cookies on success.
-    await api.post('/auth/login', payload)
+    const res = await api.post<
+      | { mfaRequired: true; challengeToken: string; method: string }
+      | { mfaRequired: false; user: AuthUser }
+    >('/auth/login', payload)
+    if (res && (res as { mfaRequired?: boolean }).mfaRequired) {
+      return res as { mfaRequired: true; challengeToken: string; method: string }
+    }
     const me = await fetchMe()
     if (!me) throw new Error('Login succeeded but session could not be loaded.')
+    return { mfaRequired: false, user: me }
+  }
+
+  /** Second MFA step: verify the challenge code, then hydrate the session. */
+  const completeMfa = async (challengeToken: string, code: string): Promise<AuthUser> => {
+    const api = useApi()
+    await api.post('/auth/mfa/verify', { challengeToken, code })
+    const me = await fetchMe()
+    if (!me) throw new Error('MFA succeeded but session could not be loaded.')
     return me
   }
 
@@ -113,6 +137,12 @@ export const useAuthStore = defineStore('auth', () => {
       // Even if the network call fails, drop local state.
     } finally {
       user.value = null
+      // Drop merchant/branch context too.
+      try {
+        useMerchantStore().reset()
+      } catch {
+        /* store may not be initialised */
+      }
       if (import.meta.client) await navigateTo('/login')
     }
   }
@@ -127,6 +157,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     ensureLoaded,
     login,
+    completeMfa,
     signup,
     verifyEmail,
     resendEmailOtp,
