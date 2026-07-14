@@ -4,7 +4,7 @@
 # even when the platform sets NODE_ENV=production (otherwise 'npm run build' fails).
 
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["npm install --include=dev --no-audit --no-fund"]
