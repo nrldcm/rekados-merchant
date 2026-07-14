@@ -56,10 +56,11 @@ const handleSubmit = async () => {
 const resendVerification = async () => {
   resendState.value = 'sending'
   try {
-    const api = useApi()
-    // OTP contract: request a verification email for this address.
-    await api.post('/otp/request', { channel: 'EMAIL', purpose: 'EMAIL_VERIFICATION', email: email.value.trim() })
+    // Core contract: re-send the email verification OTP for this address.
+    await auth.resendEmailOtp(email.value.trim())
     resendState.value = 'sent'
+    // Send them to the OTP entry screen to finish verifying.
+    await navigateTo({ path: '/verify-email', query: { email: email.value.trim() } })
   } catch {
     resendState.value = 'idle'
     formError.value = 'Could not resend the verification email. Try again shortly.'

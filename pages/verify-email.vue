@@ -3,95 +3,103 @@ definePageMeta({ layout: 'default' })
 useHead({ title: 'Verify email — Rekados Merchant' })
 
 const route = useRoute()
-const api = useApi()
+const auth = useAuthStore()
 
-type State = 'verifying' | 'success' | 'error' | 'missing'
-const state = ref<State>('verifying')
-const message = ref('')
+// Core verification is OTP-code based (POST /auth/verify-email {email, code}),
+// so this screen collects the email + the 6-digit code from the email.
+const email = ref((route.query.email as string) || '')
+const code = ref('')
 
-// Resend support if verification fails/expires.
-const resendEmail = ref('')
+const formError = ref<string | null>(null)
+const verifying = ref(false)
 const resendState = ref<'idle' | 'sending' | 'sent'>('idle')
 
-onMounted(async () => {
-  const token = route.query.token as string | undefined
-  if (!token) {
-    state.value = 'missing'
+const handleVerify = async () => {
+  formError.value = null
+  if (!email.value.trim()) {
+    formError.value = 'Enter the email address you signed up with.'
     return
   }
-  try {
-    // Backend contract: verify the emailed token.
-    // TODO(backend): confirm the exact route — using POST /auth/verify-email { token }.
-    await api.post('/auth/verify-email', { token })
-    state.value = 'success'
-  } catch (err: unknown) {
-    state.value = 'error'
-    message.value =
-      (err as { message?: string })?.message ||
-      'This verification link is invalid or has expired.'
+  if (code.value.length !== 6) {
+    formError.value = 'Enter the 6-digit code from your email.'
+    return
   }
-})
+  verifying.value = true
+  try {
+    // Auto-logs in (sets cookies) and populates the auth store.
+    await auth.verifyEmail(email.value.trim(), code.value)
+    await navigateTo('/app')
+  } catch (err: unknown) {
+    const status = (err as { statusCode?: number })?.statusCode
+    formError.value =
+      status === 400 || status === 401
+        ? 'That code is invalid or has expired.'
+        : (err as { message?: string })?.message || 'Verification failed. Please try again.'
+  } finally {
+    verifying.value = false
+  }
+}
 
 const resend = async () => {
-  if (!resendEmail.value) return
+  if (!email.value.trim()) {
+    formError.value = 'Enter your email to resend the code.'
+    return
+  }
   resendState.value = 'sending'
+  formError.value = null
   try {
-    await api.post('/otp/request', {
-      channel: 'EMAIL',
-      purpose: 'EMAIL_VERIFICATION',
-      email: resendEmail.value.trim(),
-    })
+    await auth.resendEmailOtp(email.value.trim())
     resendState.value = 'sent'
   } catch {
     resendState.value = 'idle'
+    formError.value = 'Could not resend the code. Try again shortly.'
   }
 }
 </script>
 
 <template>
-  <AuthCard title="Email verification">
-    <div v-if="state === 'verifying'" class="flex flex-col items-center py-6 text-center">
-      <svg class="h-8 w-8 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-      </svg>
-      <p class="mt-4 text-sm text-slate-600 dark:text-slate-400">Verifying your email address…</p>
-    </div>
-
-    <div v-else-if="state === 'success'" class="text-center">
-      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-2xl dark:bg-brand-900/40">✓</div>
-      <p class="mt-4 font-medium text-slate-900 dark:text-slate-100">Your email is verified!</p>
-      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">You can now sign in to your merchant dashboard.</p>
-      <NuxtLink
-        to="/login"
-        class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-      >
-        Continue to login
-      </NuxtLink>
-    </div>
-
-    <div v-else class="text-center">
-      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-2xl dark:bg-red-900/40">!</div>
-      <p class="mt-4 font-medium text-slate-900 dark:text-slate-100">
-        {{ state === 'missing' ? 'No verification token found' : 'Verification failed' }}
-      </p>
-      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-        {{ state === 'missing' ? 'This link is missing its token. Use the link from your email.' : message }}
-      </p>
-
-      <div class="mt-6 space-y-3 text-left">
+  <AuthCard title="Verify your email" subtitle="Enter the 6-digit code we emailed you.">
+    <form novalidate @submit.prevent="handleVerify">
+      <div class="space-y-4">
         <TextField
-          v-model="resendEmail"
-          label="Resend verification email"
-          name="resendEmail"
+          v-model="email"
+          label="Email"
+          name="email"
           type="email"
+          autocomplete="email"
           placeholder="you@store.com"
+          :required="true"
         />
-        <Button :loading="resendState === 'sending'" :block="true" @click="resend">
-          {{ resendState === 'sent' ? 'Email sent ✓' : 'Resend verification email' }}
-        </Button>
+        <OtpInput
+          v-model="code"
+          :length="6"
+          label="Verification code"
+          @complete="handleVerify"
+        />
+
+        <div
+          v-if="formError"
+          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300"
+          role="alert"
+        >
+          {{ formError }}
+        </div>
+
+        <Button type="submit" :loading="verifying" :block="true">Verify & continue</Button>
+
+        <div class="text-center text-sm text-slate-500 dark:text-slate-400">
+          Didn’t get a code?
+          <button
+            type="button"
+            class="font-medium text-brand-600 underline hover:text-brand-700 disabled:opacity-60 dark:text-brand-400"
+            :disabled="resendState === 'sending'"
+            @click="resend"
+          >
+            {{ resendState === 'sending' ? 'Sending…' : resendState === 'sent' ? 'Code sent ✓' : 'Resend code' }}
+          </button>
+        </div>
       </div>
-    </div>
+    </form>
 
     <template #footer>
       <NuxtLink to="/login" class="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">

@@ -3,8 +3,10 @@
  *
  *  1. Ensures the cookie session is loaded (GET /auth/me).
  *  2. Redirects unauthenticated users to /login (preserving intended path).
- *  3. Gates on role === 'MERCHANT'. A logged-in non-merchant sees an explicit
- *     "Not authorized" screen (403) rather than being bounced to login.
+ *  3. Requires authentication only. A fresh self-signup is role USER — an admin
+ *     promotes it to MERCHANT later via the console — so we do NOT hard-gate on
+ *     role. Non-merchant accounts are allowed in and surface a non-blocking
+ *     "pending approval" banner (see auth store `isPendingApproval` + app layout).
  *
  * Attach per-page with:  definePageMeta({ middleware: 'auth' })
  */
@@ -18,13 +20,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
 
-  if (!auth.isMerchant) {
-    // Authenticated but wrong role — render an explicit not-authorized screen.
-    return abortNavigation(
-      createError({
-        statusCode: 403,
-        statusMessage: 'Not authorized — this area is for Rekados merchant accounts only.',
-      }),
-    )
-  }
+  // Authenticated but not yet a MERCHANT: allow access. The UI surfaces a
+  // non-blocking "pending approval" banner rather than redirecting or crashing.
 })

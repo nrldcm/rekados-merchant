@@ -79,12 +79,14 @@ The only browser-persisted value is the dark-mode UI preference
 ### Backend API contract
 
 ```
-POST /auth/register          POST /auth/login       POST /auth/refresh
-POST /auth/logout            GET  /auth/me          POST /auth/forgot-password
-POST /auth/reset-password    POST /auth/verify-email (assumed; see TODO)
-POST /otp/request  { channel, purpose }
-POST /otp/verify   { channel, purpose, code }
+POST /auth/signup { email, password }          POST /auth/login       POST /auth/refresh
+POST /auth/verify-email { email, code }        POST /auth/logout      GET  /auth/me
+POST /auth/resend-email-otp { email }          POST /auth/forgot-password
+POST /auth/reset-password { token, password }
 ```
+
+Self-signup is **email + password only** and always creates a role `USER`
+account; an admin promotes it to `MERCHANT` later via the console.
 
 Client-side validation (`utils/validation.ts`) **mirrors** the backend rules
 (email format, password: min 12 chars + lower/upper/number/symbol) for fast UX
@@ -106,11 +108,11 @@ everything.
 
 ### Backend TODOs surfaced by this app
 
-- **Merchant registration / role**: registration uses the shared
-  `POST /auth/register` with merchant fields plus `role: 'MERCHANT'`. A dedicated
-  role/merchant-profile endpoint (e.g. `POST /merchants`) is a **backend TODO**.
-- **Email verification route**: `verify-email` assumes
-  `POST /auth/verify-email { token }` — confirm the exact route.
+- **Merchant profile / role**: self-signup (`POST /auth/signup`) is email +
+  password only and creates a role `USER`. Merchant promotion is done by an
+  admin. Store-profile fields (business name, address, …) are collected in the
+  UI but stored **locally** until a dedicated merchant-profile endpoint (e.g.
+  `POST /merchants`) exists — a **backend TODO**.
 - **Merchant data endpoints** (catalog, orders, profile, dashboard) are mocked
   client-side; see `TODO(backend)` comments for the expected REST routes.
 
