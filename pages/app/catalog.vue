@@ -15,16 +15,32 @@ interface Ingredient {
   addonPrice: number
   item?: { name: string; unit: string }
 }
+interface PortionIngredient {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  isOptional: boolean
+  addonPrice: number
+}
+interface Portion {
+  id?: string
+  label: string
+  pax: number
+  isDefault: boolean
+  price?: number
+  ingredients: PortionIngredient[]
+}
 interface Rekados {
   id: string
   name: string
   description: string | null
   basePrice: number
-  pricingMode: 'FIXED' | 'ESTIMATED'
+  pricingMode: 'FIXED' | 'ESTIMATED' | 'PORTIONS'
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
   availableKits: number
-  pricing: { mode: string; basePrice: number; maxPrice: number }
+  pricing: { mode: string; basePrice: number; maxPrice: number; fromPrice?: number }
   ingredients: Ingredient[]
+  portions: Portion[]
 }
 
 const { data: rekados, pending, refresh } = await useAsyncData<Rekados[]>(
@@ -110,6 +126,103 @@ async function remove(r: Rekados) {
   await api.del(`/merchant/catalog/${r.id}`)
   await refresh()
 }
+
+// ---- Serving-size portions ----
+const showPortions = ref(false)
+const portionTarget = ref<Rekados | null>(null)
+const portions = ref<Portion[]>([])
+const savingPortions = ref(false)
+const portionError = ref<string | null>(null)
+
+function blankPortionLine(): PortionIngredient {
+  return { itemId: inventory.value?.[0]?.id ?? '', quantity: 1, unitPrice: 0, isOptional: false, addonPrice: 0 }
+}
+/** Derived size price = Σ(non-optional unitPrice × qty). */
+function portionPrice(p: Portion): number {
+  return p.ingredients
+    .filter((l) => !l.isOptional)
+    .reduce((s, l) => s + Number(l.unitPrice || 0) * Number(l.quantity || 0), 0)
+}
+function openPortions(r: Rekados) {
+  portionTarget.value = r
+  portionError.value = null
+  portions.value = (r.portions ?? []).map((p) => ({
+    id: p.id,
+    label: p.label,
+    pax: p.pax,
+    isDefault: p.isDefault,
+    ingredients: p.ingredients.map((l) => ({
+      itemId: l.itemId, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
+      isOptional: l.isOptional, addonPrice: Number(l.addonPrice),
+    })),
+  }))
+  if (!portions.value.length) addPortion()
+  showPortions.value = true
+}
+function addPortion() {
+  portions.value.push({
+    label: portions.value.length === 0 ? 'Good for 2' : 'Good for 4',
+    pax: portions.value.length === 0 ? 2 : 4,
+    isDefault: portions.value.length === 0,
+    ingredients: [blankPortionLine()],
+  })
+}
+function removePortion(idx: number) {
+  portions.value.splice(idx, 1)
+  if (!portions.value.some((p) => p.isDefault) && portions.value[0]) portions.value[0].isDefault = true
+}
+function setDefaultPortion(idx: number) {
+  portions.value.forEach((p, i) => (p.isDefault = i === idx))
+}
+function addPortionLine(p: Portion) {
+  p.ingredients.push(blankPortionLine())
+}
+function removePortionLine(p: Portion, idx: number) {
+  p.ingredients.splice(idx, 1)
+}
+async function savePortions() {
+  if (!portionTarget.value) return
+  portionError.value = null
+  for (const p of portions.value) {
+    if (!p.label.trim()) { portionError.value = 'Every size needs a label.'; return }
+    if (!p.ingredients.length) { portionError.value = `"${p.label}" needs at least one ingredient.`; return }
+  }
+  savingPortions.value = true
+  try {
+    await api.put(`/merchant/catalog/${portionTarget.value.id}/portions`, {
+      portions: portions.value.map((p, pi) => ({
+        label: p.label.trim(),
+        pax: Number(p.pax) || 1,
+        isDefault: p.isDefault,
+        sortOrder: pi,
+        ingredients: p.ingredients.map((l, li) => ({
+          itemId: l.itemId, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
+          isOptional: l.isOptional, addonPrice: Number(l.addonPrice), sortOrder: li,
+        })),
+      })),
+    })
+    showPortions.value = false
+    await refresh()
+  } catch (e: unknown) {
+    portionError.value = (e as { message?: string })?.message || 'Could not save serving sizes.'
+  } finally {
+    savingPortions.value = false
+  }
+}
+async function clearPortions() {
+  if (!portionTarget.value) return
+  if (!confirm('Remove all serving sizes and revert to a single fixed price?')) return
+  savingPortions.value = true
+  try {
+    await api.put(`/merchant/catalog/${portionTarget.value.id}/portions`, { portions: [] })
+    showPortions.value = false
+    await refresh()
+  } catch (e: unknown) {
+    portionError.value = (e as { message?: string })?.message || 'Could not clear serving sizes.'
+  } finally {
+    savingPortions.value = false
+  }
+}
 </script>
 
 <template>
@@ -136,7 +249,10 @@ async function remove(r: Rekados) {
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">
             <h3 class="truncate font-semibold text-slate-900 dark:text-slate-100">{{ r.name }}</h3>
-            <p class="text-xs text-slate-400">{{ r.ingredients.length }} ingredients · {{ r.pricingMode }}</p>
+            <p class="text-xs text-slate-400">
+              <template v-if="r.pricingMode === 'PORTIONS'">{{ r.portions.length }} sizes · PORTIONS</template>
+              <template v-else>{{ r.ingredients.length }} ingredients · {{ r.pricingMode }}</template>
+            </p>
           </div>
           <span
             class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
@@ -150,10 +266,18 @@ async function remove(r: Rekados) {
 
         <div class="mt-3 flex items-end justify-between">
           <div>
-            <p class="text-lg font-bold text-slate-900 dark:text-slate-100">
-              {{ peso(r.pricing.basePrice) }}<span v-if="r.pricingMode === 'ESTIMATED'" class="text-xs font-normal text-slate-400"> + add-ons</span>
-            </p>
-            <p class="text-xs text-slate-400">up to {{ peso(r.pricing.maxPrice) }}</p>
+            <template v-if="r.pricingMode === 'PORTIONS'">
+              <p class="text-lg font-bold text-slate-900 dark:text-slate-100">
+                from {{ peso(r.pricing.fromPrice ?? 0) }}
+              </p>
+              <p class="text-xs text-slate-400">{{ r.portions.map((p) => p.label).join(' · ') }}</p>
+            </template>
+            <template v-else>
+              <p class="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {{ peso(r.pricing.basePrice) }}<span v-if="r.pricingMode === 'ESTIMATED'" class="text-xs font-normal text-slate-400"> + add-ons</span>
+              </p>
+              <p class="text-xs text-slate-400">up to {{ peso(r.pricing.maxPrice) }}</p>
+            </template>
           </div>
           <div class="text-right">
             <p class="text-lg font-bold" :class="r.availableKits > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'">
@@ -167,6 +291,7 @@ async function remove(r: Rekados) {
           <button v-if="merchant.can('catalog:update') && r.status !== 'ACTIVE'" class="rounded px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30" @click="setStatus(r, 'ACTIVE')">Activate</button>
           <button v-if="merchant.can('catalog:update') && r.status === 'ACTIVE'" class="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" @click="setStatus(r, 'ARCHIVED')">Archive</button>
           <button v-if="merchant.can('catalog:update')" class="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" @click="openEdit(r)">Edit</button>
+          <button v-if="merchant.can('catalog:update')" class="rounded px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30" @click="openPortions(r)">Sizes</button>
           <button v-if="merchant.can('catalog:delete')" class="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" @click="remove(r)">Delete</button>
         </div>
       </div>
@@ -214,6 +339,71 @@ async function remove(r: Rekados) {
       <template #footer>
         <Button variant="ghost" @click="showForm = false">Cancel</Button>
         <Button :loading="saving" @click="save">{{ editing ? 'Save' : 'Create' }}</Button>
+      </template>
+    </Modal>
+
+    <!-- Serving sizes (portions) editor -->
+    <Modal v-model="showPortions" :title="`Serving sizes — ${portionTarget?.name ?? ''}`">
+      <div class="space-y-4">
+        <p class="rounded-lg bg-brand-50 p-2 text-xs text-brand-700 dark:bg-brand-900/20 dark:text-brand-300">
+          Each size has its own ingredients — scale quantities or drop items per size.
+          The <strong>price is computed from the ingredients</strong> (sum of unit price × qty).
+        </p>
+        <p v-if="!inventory?.length" class="rounded-lg bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+          Add inventory items first — sizes are built from them.
+        </p>
+
+        <div v-for="(p, pi) in portions" :key="pi" class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <div class="flex flex-wrap items-center gap-2">
+            <input v-model="p.label" class="input-base w-36 flex-1" placeholder="Good for 2" />
+            <div class="flex items-center gap-1">
+              <input v-model.number="p.pax" type="number" min="1" class="input-base w-16" />
+              <span class="text-xs text-slate-400">pax</span>
+            </div>
+            <label class="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+              <input type="radio" :checked="p.isDefault" @change="setDefaultPortion(pi)" /> default
+            </label>
+            <button type="button" class="text-slate-400 hover:text-red-500" aria-label="Remove size" @click="removePortion(pi)">✕</button>
+          </div>
+
+          <div class="mt-3 space-y-2">
+            <div v-for="(line, li) in p.ingredients" :key="li" class="rounded-lg border border-slate-100 p-2 dark:border-slate-800">
+              <div class="flex flex-wrap items-center gap-2">
+                <select v-model="line.itemId" class="input-base min-w-[7rem] flex-1">
+                  <option v-for="it in inventory" :key="it.id" :value="it.id">{{ it.name }} ({{ it.unit }})</option>
+                </select>
+                <input v-model.number="line.quantity" type="number" step="any" class="input-base w-16" placeholder="Qty" />
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-slate-400">₱</span>
+                  <input v-model.number="line.unitPrice" type="number" step="any" class="input-base w-20" placeholder="Unit price" />
+                </div>
+                <button type="button" class="text-slate-400 hover:text-red-500" aria-label="Remove ingredient" @click="removePortionLine(p, li)">✕</button>
+              </div>
+              <label class="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                <input v-model="line.isOptional" type="checkbox" class="rounded" /> Optional add-on
+                <template v-if="line.isOptional">
+                  <span class="ml-1 text-slate-400">+₱</span>
+                  <input v-model.number="line.addonPrice" type="number" step="any" class="input-base w-20 py-0.5" placeholder="Add-on" />
+                </template>
+              </label>
+            </div>
+          </div>
+
+          <div class="mt-2 flex items-center justify-between">
+            <button type="button" class="text-xs font-medium text-brand-600" @click="addPortionLine(p)">+ Add ingredient</button>
+            <p class="text-sm font-bold text-slate-900 dark:text-slate-100">= {{ peso(portionPrice(p)) }}</p>
+          </div>
+        </div>
+
+        <button type="button" class="w-full rounded-lg border border-dashed border-slate-300 py-2 text-sm font-medium text-brand-600 dark:border-slate-600" @click="addPortion">
+          + Add serving size
+        </button>
+        <FormError v-if="portionError" :message="portionError" />
+      </div>
+      <template #footer>
+        <Button v-if="portionTarget?.pricingMode === 'PORTIONS'" variant="ghost" @click="clearPortions">Clear sizes</Button>
+        <Button variant="ghost" @click="showPortions = false">Cancel</Button>
+        <Button :loading="savingPortions" @click="savePortions">Save sizes</Button>
       </template>
     </Modal>
   </div>
