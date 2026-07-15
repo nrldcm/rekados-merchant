@@ -31,8 +31,8 @@ export const useColorScheme = () => {
     } catch {
       saved = null
     }
-    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-    apply(saved ?? (prefersDark ? 'dark' : 'light'))
+    // Default to LIGHT (day) mode; honour an explicit saved choice only.
+    apply(saved ?? 'light')
   }
 
   const toggle = () => apply(scheme.value === 'dark' ? 'light' : 'dark')
