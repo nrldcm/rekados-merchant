@@ -57,11 +57,23 @@ export const useApi = () => {
   const request = async <T>(path: string, options: FetchOptions = {}): Promise<T> => {
     const branchHeader =
       activeBranch.value ? { 'X-Branch-Id': activeBranch.value } : {}
+    // On SSR (a full page refresh) forward the incoming browser cookie so the
+    // session is found on the server too — otherwise /auth/me 401s and the
+    // middleware bounces the user to /login on every refresh.
+    const ssrCookie: Record<string, string> = {}
+    if (import.meta.server) {
+      const cookie = useRequestHeaders(['cookie']).cookie
+      if (cookie) ssrCookie.cookie = cookie
+    }
     const send = () =>
       encryptedFetch<T>(baseURL, path, {
         method: (options.method as string) || 'GET',
         body: (options as { body?: unknown }).body,
-        headers: { ...branchHeader, ...(options.headers as Record<string, string> | undefined) },
+        headers: {
+          ...branchHeader,
+          ...ssrCookie,
+          ...(options.headers as Record<string, string> | undefined),
+        },
         credentials: 'include',
       })
 
