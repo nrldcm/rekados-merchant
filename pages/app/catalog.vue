@@ -6,7 +6,7 @@ const merchant = useMerchantStore()
 const api = useApi()
 const { peso } = useFormat()
 
-interface InvItem { id: string; name: string; unit: string }
+interface InvItem { id: string; name: string; unit: string; price?: string | number }
 interface Ingredient {
   id?: string
   itemId: string
@@ -62,6 +62,17 @@ const error = ref<string | null>(null)
 
 const hasOptional = computed(() => form.ingredients.some((i) => i.isOptional))
 
+/** Current inventory price for an item (its price "today"). */
+function itemPrice(itemId: string): number {
+  return Number(inventory.value?.find((it) => it.id === itemId)?.price ?? 0)
+}
+/** Auto base price = Σ(ingredient price × qty) over non-optional lines. */
+const derivedBasePrice = computed(() =>
+  form.ingredients
+    .filter((i) => !i.isOptional)
+    .reduce((s, i) => s + itemPrice(i.itemId) * Number(i.quantity || 0), 0),
+)
+
 function openCreate() {
   editing.value = null
   Object.assign(form, { name: '', description: '', basePrice: 0, ingredients: [] })
@@ -96,7 +107,8 @@ async function save() {
     const payload = {
       name: form.name,
       description: form.description || undefined,
-      basePrice: Number(form.basePrice),
+      // Auto-calculated from inventory prices; the server recomputes it live too.
+      basePrice: derivedBasePrice.value,
       ingredients: form.ingredients.map((i, idx) => ({
         itemId: i.itemId, quantity: Number(i.quantity),
         isOptional: i.isOptional, addonPrice: Number(i.addonPrice), sortOrder: idx,
@@ -137,11 +149,12 @@ const portionError = ref<string | null>(null)
 function blankPortionLine(): PortionIngredient {
   return { itemId: inventory.value?.[0]?.id ?? '', quantity: 1, unitPrice: 0, isOptional: false, addonPrice: 0 }
 }
-/** Derived size price = Σ(non-optional unitPrice × qty). */
+/** Derived size price = Σ(ingredient price × qty) over non-optional lines,
+ *  using the ingredient's current inventory price. */
 function portionPrice(p: Portion): number {
   return p.ingredients
     .filter((l) => !l.isOptional)
-    .reduce((s, l) => s + Number(l.unitPrice || 0) * Number(l.quantity || 0), 0)
+    .reduce((s, l) => s + itemPrice(l.itemId) * Number(l.quantity || 0), 0)
 }
 function openPortions(r: Rekados) {
   portionTarget.value = r
@@ -196,7 +209,8 @@ async function savePortions() {
         isDefault: p.isDefault,
         sortOrder: pi,
         ingredients: p.ingredients.map((l, li) => ({
-          itemId: l.itemId, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
+          // Price comes from the ingredient's current inventory price.
+          itemId: l.itemId, quantity: Number(l.quantity), unitPrice: itemPrice(l.itemId),
           isOptional: l.isOptional, addonPrice: Number(l.addonPrice), sortOrder: li,
         })),
       })),
@@ -302,8 +316,15 @@ async function clearPortions() {
       <div class="space-y-4">
         <TextField v-model="form.name" label="Name" name="name" placeholder="Filipino Style Spaghetti" :required="true" />
         <TextField v-model="form.description" label="Description (optional)" name="description" />
-        <TextField v-model.number="form.basePrice" label="Base price (₱)" name="basePrice" type="number"
-          :hint="hasOptional ? 'Estimated pricing: base + selected add-ons' : 'Fixed price (no optional items)'" />
+        <div class="flex items-center justify-between rounded-lg bg-brand-50 px-3 py-2.5 dark:bg-brand-900/20">
+          <div>
+            <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Base price (auto)</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Sum of the ingredient prices from inventory{{ hasOptional ? ' + selected add-ons' : '' }}.
+            </p>
+          </div>
+          <p class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ peso(derivedBasePrice) }}</p>
+        </div>
 
         <div>
           <div class="mb-2 flex items-center justify-between">
@@ -347,7 +368,8 @@ async function clearPortions() {
       <div class="space-y-4">
         <p class="rounded-lg bg-brand-50 p-2 text-xs text-brand-700 dark:bg-brand-900/20 dark:text-brand-300">
           Each size has its own ingredients — scale quantities or drop items per size.
-          The <strong>price is computed from the ingredients</strong> (sum of unit price × qty).
+          The <strong>price is auto-calculated</strong> from your inventory prices (ingredient price × qty).
+          Update an ingredient's price in Inventory and every size reprices.
         </p>
         <p v-if="!inventory?.length" class="rounded-lg bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
           Add inventory items first — sizes are built from them.
@@ -373,10 +395,10 @@ async function clearPortions() {
                   <option v-for="it in inventory" :key="it.id" :value="it.id">{{ it.name }} ({{ it.unit }})</option>
                 </select>
                 <input v-model.number="line.quantity" type="number" step="any" class="input-base w-16" placeholder="Qty" />
-                <div class="flex items-center gap-1">
-                  <span class="text-xs text-slate-400">₱</span>
-                  <input v-model.number="line.unitPrice" type="number" step="any" class="input-base w-20" placeholder="Unit price" />
-                </div>
+                <!-- Price is the ingredient's current inventory price (read-only). -->
+                <span class="w-24 text-right text-sm text-slate-600 dark:text-slate-300" :title="'Price × qty'">
+                  {{ peso(itemPrice(line.itemId) * Number(line.quantity || 0)) }}
+                </span>
                 <button type="button" class="text-slate-400 hover:text-red-500" aria-label="Remove ingredient" @click="removePortionLine(p, li)">✕</button>
               </div>
               <label class="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
