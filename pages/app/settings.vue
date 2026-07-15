@@ -86,15 +86,6 @@ async function disableMfa(reset = false) {
     working.value = false
   }
 }
-async function setDefault(method: string) {
-  try {
-    await api.post('/me/mfa/default', { method })
-    await refreshMfa()
-    msg.value = `Default 2FA set to ${method}.`
-  } catch (e: unknown) {
-    err.value = (e as { message?: string })?.message || 'Could not set default.'
-  }
-}
 async function regenBackup() {
   const res = await api.post<{ codes: string[] }>('/me/mfa/backup-codes')
   backupCodes.value = res.codes
@@ -138,8 +129,9 @@ async function requestDeletion() {
       <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
         Status:
         <span :class="mfa?.enabled ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-slate-500'">
-          {{ mfa?.enabled ? `On (default: ${mfa.defaultMethod})` : 'Off' }}
+          {{ mfa?.enabled ? 'On' : 'Off' }}
         </span>
+        <span v-if="mfa?.enabled" class="ml-1">— you choose how to receive your code (email, SMS or authenticator) each time you log in.</span>
       </p>
 
       <div v-if="!mfa?.enabled" class="space-y-3">
@@ -157,13 +149,9 @@ async function requestDeletion() {
       </div>
 
       <div v-else class="space-y-4">
-        <div>
-          <p class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">Default method</p>
-          <div class="flex flex-wrap gap-2">
-            <button v-if="mfa.totpConfigured" class="rounded-lg border px-3 py-1.5 text-sm" :class="mfa.defaultMethod === 'TOTP' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30' : 'border-slate-300 dark:border-slate-700'" @click="setDefault('TOTP')">Authenticator</button>
-            <button class="rounded-lg border px-3 py-1.5 text-sm" :class="mfa.defaultMethod === 'EMAIL' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30' : 'border-slate-300 dark:border-slate-700'" @click="setDefault('EMAIL')">Email</button>
-            <button v-if="mfa.phoneVerified" class="rounded-lg border px-3 py-1.5 text-sm" :class="mfa.defaultMethod === 'SMS' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30' : 'border-slate-300 dark:border-slate-700'" @click="setDefault('SMS')">SMS</button>
-          </div>
+        <div class="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          Two-factor is on. At login you'll choose how to receive your code —
+          <span class="font-medium">email</span><span v-if="mfa.phoneVerified">, <span class="font-medium">SMS</span></span><span v-if="mfa.totpConfigured"> or your <span class="font-medium">authenticator app</span></span>.
         </div>
         <p class="text-sm text-slate-500">Backup codes remaining: {{ mfa.backupCodesRemaining }}
           <button class="ml-2 text-xs font-medium text-brand-600 underline" @click="regenBackup">Regenerate</button>
