@@ -19,8 +19,39 @@ const unverified = ref(false)
 const resendState = ref<'idle' | 'sending' | 'sent'>('idle')
 
 // MFA second step (set when login returns a challenge).
-const mfaChallenge = ref<{ challengeToken: string; method: string } | null>(null)
+const mfaChallenge = ref<{
+  challengeToken: string
+  method: string
+  availableMethods: string[]
+} | null>(null)
 const mfaCode = ref('')
+const mfaMethod = ref<'EMAIL' | 'SMS' | 'TOTP'>('EMAIL')
+const switchingChannel = ref(false)
+const channelNotice = ref<string | null>(null)
+
+const methodLabel = (m: string) =>
+  m === 'TOTP' ? 'Authenticator app' : m === 'SMS' ? 'Text message (SMS)' : 'Email'
+
+/** Pick a delivery channel: for email/SMS ask the backend to send a code. */
+async function chooseMethod(m: 'EMAIL' | 'SMS' | 'TOTP') {
+  if (!mfaChallenge.value || switchingChannel.value) return
+  mfaMethod.value = m
+  channelNotice.value = null
+  formError.value = null
+  if (m === 'TOTP') {
+    channelNotice.value = 'Enter the current code from your authenticator app.'
+    return
+  }
+  switchingChannel.value = true
+  try {
+    await auth.sendMfaChallenge(mfaChallenge.value.challengeToken, m)
+    channelNotice.value = m === 'SMS' ? 'We sent a code to your phone.' : 'We sent a code to your email.'
+  } catch (err) {
+    formError.value = (err as { message?: string })?.message || 'Could not send a code. Try another method.'
+  } finally {
+    switchingChannel.value = false
+  }
+}
 
 // If the auth middleware redirected here due to a role mismatch.
 const denied = computed(() => route.query.denied === '1')
@@ -41,7 +72,17 @@ const handleSubmit = async () => {
     const result = await auth.login({ email: email.value.trim(), password: password.value })
     if (result.mfaRequired) {
       // Second factor required — reveal the code step instead of navigating.
-      mfaChallenge.value = { challengeToken: result.challengeToken, method: result.method }
+      mfaChallenge.value = {
+        challengeToken: result.challengeToken,
+        method: result.method,
+        availableMethods: result.availableMethods ?? ['EMAIL'],
+      }
+      // The backend pre-sent via a default (TOTP if set, else email).
+      mfaMethod.value = (result.method as 'EMAIL' | 'SMS' | 'TOTP') ?? 'EMAIL'
+      channelNotice.value =
+        result.method === 'TOTP'
+          ? 'Enter the current code from your authenticator app.'
+          : 'We sent a code to your email.'
       return
     }
     useState<boolean>('lock:locked', () => false).value = false // clear any stale lock gate
@@ -109,11 +150,32 @@ const resendVerification = async () => {
     <!-- MFA second step -->
     <form v-if="mfaChallenge" novalidate @submit.prevent="submitMfa">
       <div class="space-y-4">
-        <p class="text-sm text-slate-600 dark:text-slate-300">
-          Enter the code from your
-          {{ mfaChallenge.method === 'TOTP' ? 'authenticator app' : mfaChallenge.method === 'SMS' ? 'phone (SMS)' : 'email' }}.
-          You can also use a backup code.
+        <div>
+          <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+            How do you want to receive your code?
+          </p>
+          <div class="grid grid-cols-1 gap-2">
+            <button
+              v-for="m in mfaChallenge.availableMethods"
+              :key="m"
+              type="button"
+              :disabled="switchingChannel"
+              class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:opacity-60"
+              :class="mfaMethod === m
+                ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
+                : 'border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300'"
+              @click="chooseMethod(m as 'EMAIL' | 'SMS' | 'TOTP')"
+            >
+              <span>{{ methodLabel(m) }}</span>
+              <span v-if="mfaMethod === m" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+
+        <p v-if="channelNotice" class="text-sm text-slate-600 dark:text-slate-300">
+          {{ channelNotice }} You can also use a backup code.
         </p>
+
         <TextField
           v-model="mfaCode"
           label="Verification code"
@@ -122,6 +184,15 @@ const resendVerification = async () => {
           placeholder="123456"
           :required="true"
         />
+        <button
+          v-if="mfaMethod !== 'TOTP'"
+          type="button"
+          class="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60 dark:text-brand-400"
+          :disabled="switchingChannel"
+          @click="chooseMethod(mfaMethod)"
+        >
+          {{ switchingChannel ? 'Sending…' : 'Resend code' }}
+        </button>
         <div
           v-if="formError"
           class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300"

@@ -68,16 +68,16 @@ export const useAuthStore = defineStore('auth', () => {
   const login = async (
     payload: LoginPayload,
   ): Promise<
-    | { mfaRequired: true; challengeToken: string; method: string }
+    | { mfaRequired: true; challengeToken: string; method: string; availableMethods: string[] }
     | { mfaRequired: false; user: AuthUser }
   > => {
     const api = useApi()
     const res = await api.post<
-      | { mfaRequired: true; challengeToken: string; method: string }
+      | { mfaRequired: true; challengeToken: string; method: string; availableMethods: string[] }
       | { mfaRequired: false; user: AuthUser }
     >('/auth/login', payload)
     if (res && (res as { mfaRequired?: boolean }).mfaRequired) {
-      return res as { mfaRequired: true; challengeToken: string; method: string }
+      return res as { mfaRequired: true; challengeToken: string; method: string; availableMethods: string[] }
     }
     // Non-MFA login: the response already carries the user + sets cookies.
     const me = (res as { user?: AuthUser }).user ?? (await fetchMe())
@@ -85,6 +85,15 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = me
     initialized.value = true
     return { mfaRequired: false, user: me }
+  }
+
+  /** (Re)send the login OTP through a chosen channel during an MFA challenge. */
+  const sendMfaChallenge = async (
+    challengeToken: string,
+    method: string,
+  ): Promise<void> => {
+    const api = useApi()
+    await api.post('/auth/mfa/challenge', { challengeToken, method })
   }
 
   /** Second MFA step: verify the challenge code, then hydrate the session. */
@@ -169,6 +178,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     ensureLoaded,
     login,
+    sendMfaChallenge,
     completeMfa,
     signup,
     verifyEmail,
