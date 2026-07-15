@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { evaluatePassword, isValidEmail, isValidPhone, isNonEmpty, minLength } from '~/utils/validation'
+import { evaluatePassword, isValidEmail, isNonEmpty, minLength } from '~/utils/validation'
 
 definePageMeta({ layout: 'default' })
 useHead({ title: 'Become a partner — Rekados Merchant' })
@@ -46,7 +46,18 @@ const validateAccount = () => {
   // we don't block account creation on data the backend can't store yet.
   errors.businessName = !form.businessName || isNonEmpty(form.businessName) ? undefined : 'Business name is required.'
   errors.ownerName = !form.ownerName || isNonEmpty(form.ownerName) ? undefined : 'Owner name is required.'
-  errors.phone = !form.phone || isValidPhone(form.phone) ? undefined : 'Enter a valid phone number.'
+  // Normalize any provided number to canonical +639XXXXXXXXX.
+  if (form.phone) {
+    const formattedPhone = formatPhMobile(form.phone)
+    if (formattedPhone) {
+      form.phone = formattedPhone
+      errors.phone = undefined
+    } else {
+      errors.phone = 'Enter a valid PH mobile number (e.g. 09171234567).'
+    }
+  } else {
+    errors.phone = undefined
+  }
   errors.storeAddress = !form.storeAddress || minLength(form.storeAddress, 6) ? undefined : 'Enter your store address.'
 
   return !errors.email && !errors.password && !errors.confirmPassword
