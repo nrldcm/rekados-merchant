@@ -10,7 +10,6 @@ const activeBranch = computed(() => merchant.activeBranch)
 
 <template>
   <div class="min-h-screen bg-slate-50 dark:bg-slate-950">
-    <LockOverlay />
     <div class="flex min-h-screen">
       <AppSidebar :open="sidebarOpen" @close="sidebarOpen = false" />
 

@@ -75,7 +75,7 @@ async function lockNow() {
 
     <!-- Set / change PIN -->
     <div class="space-y-3">
-      <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ status.pinSet ? 'Change PIN' : 'Set a PIN' }}</p>
+      <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ status.pinSet ? 'Change your PIN' : 'Set a PIN' }}</p>
 
       <template v-if="status.pinSet">
         <label class="block text-xs text-slate-500 dark:text-slate-400">Verify with</label>
@@ -92,7 +92,7 @@ async function lockNow() {
         <input :value="newPin" type="password" inputmode="numeric" maxlength="6" class="input-base" placeholder="New 6-digit PIN" @input="newPin = digits(($event.target as HTMLInputElement).value)" />
         <input :value="confirmPin" type="password" inputmode="numeric" maxlength="6" class="input-base" placeholder="Confirm PIN" @input="confirmPin = digits(($event.target as HTMLInputElement).value)" />
       </div>
-      <AppButton size="sm" :disabled="busy" @click="savePin">{{ status.pinSet ? 'Change PIN' : 'Set PIN & enable' }}</AppButton>
+      <AppButton size="sm" :disabled="busy" @click="savePin">{{ status.pinSet ? 'Update PIN' : 'Set PIN & enable' }}</AppButton>
     </div>
 
     <!-- Enable / disable + lock now -->

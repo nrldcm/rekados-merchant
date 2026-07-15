@@ -44,6 +44,7 @@ const handleSubmit = async () => {
       mfaChallenge.value = { challengeToken: result.challengeToken, method: result.method }
       return
     }
+    useState<boolean>('lock:locked', () => false).value = false // clear any stale lock gate
     const raw = (route.query.redirect as string) || '/app'
     // Only allow internal, same-origin paths (reject //host and /\host).
     await navigateTo(/^\/(?![/\\])/.test(raw) ? raw : '/app')
@@ -69,6 +70,7 @@ const submitMfa = async () => {
   submitting.value = true
   try {
     await auth.completeMfa(mfaChallenge.value.challengeToken, mfaCode.value.trim())
+    useState<boolean>('lock:locked', () => false).value = false // clear any stale lock gate
     const raw = (route.query.redirect as string) || '/app'
     // Only allow internal, same-origin paths (reject //host and /\host).
     await navigateTo(/^\/(?![/\\])/.test(raw) ? raw : '/app')
