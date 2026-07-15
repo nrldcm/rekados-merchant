@@ -20,8 +20,15 @@ function safeNext(): string {
   return /^\/(?![/\\])/.test(next) && next !== '/locked' ? next : '/app'
 }
 
+// Show who is locked (the session stays alive, so /auth/me still works).
+const fullName = computed(() =>
+  [auth.user?.firstName, auth.user?.lastName].filter(Boolean).join(' ').trim(),
+)
+const handle = computed(() => auth.user?.businessName || auth.user?.email || '')
+
 onMounted(async () => {
   await refresh()
+  if (!auth.user) await auth.fetchMe?.()
   if (!locked.value) await navigateTo(safeNext())
 })
 
@@ -55,7 +62,14 @@ async function signOut() {
     <div class="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl dark:bg-slate-900">
       <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-2xl dark:bg-brand-900/30" aria-hidden="true">🔒</div>
       <h1 class="text-lg font-bold text-slate-900 dark:text-white">Session locked</h1>
-      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter your 6-digit PIN to continue.</p>
+
+      <!-- Who is signed in (session is still alive — just locked). -->
+      <div v-if="fullName || handle" class="mx-auto mt-3 rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-800/60">
+        <p v-if="fullName" class="font-semibold text-slate-900 dark:text-white">{{ fullName }}</p>
+        <p v-if="handle" class="text-sm text-slate-500 dark:text-slate-400">{{ handle }}</p>
+      </div>
+
+      <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">Enter your 6-digit PIN to continue.</p>
 
       <input
         v-model="pin"
