@@ -25,8 +25,17 @@ export const useLockMode = () => {
       status.value = s
       locked.value = s.locked
     } catch {
-      /* not signed in / offline — leave as-is */
+      // Can't read lock state (e.g. signed out) — never keep the gate up, or a
+      // logged-out user gets stuck on /locked.
+      status.value = { enabled: false, pinSet: false, locked: false }
+      locked.value = false
     }
+  }
+
+  /** Clear the client lock state (call on logout). */
+  function reset() {
+    locked.value = false
+    status.value = { enabled: false, pinSet: false, locked: false }
   }
 
   /** Engage the lock now (idle timeout or manual). No-op if Lock Mode is off. */
@@ -45,5 +54,5 @@ export const useLockMode = () => {
     locked.value = false
   }
 
-  return { locked, status, refresh, engage, unlock }
+  return { locked, status, refresh, reset, engage, unlock }
 }

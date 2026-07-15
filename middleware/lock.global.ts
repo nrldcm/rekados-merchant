@@ -14,6 +14,10 @@ const ALLOW = new Set([
 ])
 
 export default defineNuxtRouteMiddleware((to) => {
+  // Don't gate a logged-out user — they belong on /login, not /locked.
+  const auth = useAuthStore()
+  if (!auth.isAuthenticated) return
+
   const { locked } = useLockMode()
   if (locked.value && !ALLOW.has(to.path)) {
     return navigateTo(`/locked?next=${encodeURIComponent(to.fullPath)}`)

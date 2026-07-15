@@ -79,18 +79,24 @@ export const useAuthStore = defineStore('auth', () => {
     if (res && (res as { mfaRequired?: boolean }).mfaRequired) {
       return res as { mfaRequired: true; challengeToken: string; method: string }
     }
-    const me = await fetchMe()
+    // Non-MFA login: the response already carries the user + sets cookies.
+    const me = (res as { user?: AuthUser }).user ?? (await fetchMe())
     if (!me) throw new Error('Login succeeded but session could not be loaded.')
+    user.value = me
+    initialized.value = true
     return { mfaRequired: false, user: me }
   }
 
   /** Second MFA step: verify the challenge code, then hydrate the session. */
   const completeMfa = async (challengeToken: string, code: string): Promise<AuthUser> => {
     const api = useApi()
-    await api.post('/auth/mfa/verify', { challengeToken, code })
-    const me = await fetchMe()
-    if (!me) throw new Error('MFA succeeded but session could not be loaded.')
-    return me
+    // The verify response already carries the authenticated user + sets cookies;
+    // use it directly (no redundant /auth/me that could race the cookie).
+    const res = await api.post<{ user: AuthUser }>('/auth/mfa/verify', { challengeToken, code })
+    if (!res?.user) throw new Error('MFA succeeded but session could not be loaded.')
+    user.value = res.user
+    initialized.value = true
+    return res.user
   }
 
   /**
@@ -137,6 +143,12 @@ export const useAuthStore = defineStore('auth', () => {
       // Even if the network call fails, drop local state.
     } finally {
       user.value = null
+      // Clear the lock gate so a logged-out user isn't bounced to /locked.
+      try {
+        useLockMode().reset()
+      } catch {
+        /* composable may be unavailable during teardown */
+      }
       // Drop merchant/branch context too.
       try {
         useMerchantStore().reset()
