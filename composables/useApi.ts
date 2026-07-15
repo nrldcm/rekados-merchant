@@ -116,10 +116,49 @@ export const useApi = () => {
   return { request, get, post, put, patch, del, baseURL }
 }
 
+/**
+ * Turns any thrown fetch error into a friendly, human-readable message.
+ * Prefers the backend's own message, then a friendly message mapped from the
+ * HTTP status, then a connection message — never ofetch's raw
+ * `[POST] "/api/..": 400` string.
+ */
 function extractMessage(error: unknown): string {
-  const data = (error as { data?: { message?: string | string[] } })?.data
+  const e = error as {
+    data?: { message?: string | string[]; error?: string }
+    statusCode?: number
+    status?: number
+    response?: { status?: number }
+    message?: string
+  }
+  const data = e?.data
   if (data?.message) {
     return Array.isArray(data.message) ? data.message.join(', ') : data.message
   }
-  return (error as { message?: string })?.message || ''
+  if (data?.error && !/^\d+$/.test(String(data.error))) return data.error
+
+  const status = e?.response?.status ?? e?.statusCode ?? e?.status
+  const byStatus: Record<number, string> = {
+    400: 'Some details look off. Please check and try again.',
+    401: 'Your session has expired. Please sign in again.',
+    403: "You don't have permission to do that.",
+    404: "We couldn't find what you were looking for.",
+    408: 'The request timed out. Please try again.',
+    409: 'That conflicts with the current state. Please refresh and try again.',
+    413: 'That request is too large.',
+    422: 'Some details look off. Please check and try again.',
+    429: 'Too many attempts. Please wait a moment and try again.',
+    500: 'Something went wrong on our end. Please try again shortly.',
+    502: 'The service is temporarily unavailable. Please try again shortly.',
+    503: 'The service is temporarily unavailable. Please try again shortly.',
+    504: 'The service is temporarily unavailable. Please try again shortly.',
+  }
+  if (status && byStatus[status]) return byStatus[status]
+
+  const msg = e?.message
+  const isRaw =
+    !msg ||
+    /^\[\w+\]\s+".*":/.test(msg) ||
+    /fetch failed|failed to fetch|networkerror|load failed/i.test(msg)
+  if (isRaw) return "We couldn't reach the server. Please check your connection and try again."
+  return msg
 }
