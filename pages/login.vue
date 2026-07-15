@@ -44,8 +44,9 @@ const handleSubmit = async () => {
       mfaChallenge.value = { challengeToken: result.challengeToken, method: result.method }
       return
     }
-    const redirect = (route.query.redirect as string) || '/app'
-    await navigateTo(redirect)
+    const raw = (route.query.redirect as string) || '/app'
+    // Only allow internal, same-origin paths (reject //host and /\host).
+    await navigateTo(/^\/(?![/\\])/.test(raw) ? raw : '/app')
   } catch (err: unknown) {
     const status = (err as { statusCode?: number })?.statusCode
     if (status === 403) {
@@ -68,8 +69,9 @@ const submitMfa = async () => {
   submitting.value = true
   try {
     await auth.completeMfa(mfaChallenge.value.challengeToken, mfaCode.value.trim())
-    const redirect = (route.query.redirect as string) || '/app'
-    await navigateTo(redirect)
+    const raw = (route.query.redirect as string) || '/app'
+    // Only allow internal, same-origin paths (reject //host and /\host).
+    await navigateTo(/^\/(?![/\\])/.test(raw) ? raw : '/app')
   } catch (err: unknown) {
     formError.value = (err as { message?: string })?.message || 'Invalid verification code.'
   } finally {

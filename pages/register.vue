@@ -61,7 +61,10 @@ const validateAccount = () => {
 const stashStoreProfile = () => {
   if (!import.meta.client) return
   try {
-    localStorage.setItem(
+    // sessionStorage (NOT localStorage): this PII is per-tab and auto-cleared
+    // when the tab closes, instead of persisting indefinitely in JS-readable
+    // storage. Replace with the real POST /merchants call once available.
+    sessionStorage.setItem(
       'rekados.merchant.pendingProfile',
       JSON.stringify({
         businessName: form.businessName.trim(),
