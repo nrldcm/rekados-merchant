@@ -14,9 +14,9 @@ const form = reactive({
   email: '',
   password: '',
   confirmPassword: '',
-  // Store-profile fields — collected for convenience but kept LOCAL only.
-  // TODO(backend): merchant profile endpoint (not built yet) — persist these
-  // once a POST /merchants (or similar) route exists.
+  // Store-profile fields — collected here for convenience, then handed off to
+  // the onboarding wizard (/onboard) which persists them via POST
+  // /merchant/register once the account is verified. Not sent to /auth/signup.
   businessName: '',
   ownerName: '',
   phone: '',
@@ -43,7 +43,7 @@ const validateAccount = () => {
       ? undefined
       : 'Passwords do not match.'
   // Store-profile fields are optional at signup; validate only if provided so
-  // we don't block account creation on data the backend can't store yet.
+  // we don't block account creation — they're finalized during onboarding.
   errors.businessName = !form.businessName || isNonEmpty(form.businessName) ? undefined : 'Business name is required.'
   errors.ownerName = !form.ownerName || isNonEmpty(form.ownerName) ? undefined : 'Owner name is required.'
   // Normalize any provided number to canonical +639XXXXXXXXX.
@@ -64,17 +64,16 @@ const validateAccount = () => {
 }
 
 /**
- * Persist the locally-collected store profile so it can be submitted once the
- * backend exposes an endpoint for it.
- * TODO(backend): merchant profile endpoint — replace this local stash with a
- * real API call (e.g. POST /merchants) after email verification / promotion.
+ * Hand the locally-collected store profile off to the onboarding wizard.
+ * After email verification the user lands on /onboard, which reads this stash
+ * to pre-fill the business form and persists it via POST /merchant/register.
  */
 const stashStoreProfile = () => {
   if (!import.meta.client) return
   try {
     // sessionStorage (NOT localStorage): this PII is per-tab and auto-cleared
     // when the tab closes, instead of persisting indefinitely in JS-readable
-    // storage. Replace with the real POST /merchants call once available.
+    // storage. /onboard consumes and clears it once the merchant is created.
     sessionStorage.setItem(
       'rekados.merchant.pendingProfile',
       JSON.stringify({
