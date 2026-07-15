@@ -8,7 +8,35 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     'nuxt-security',
     '@nuxt/eslint',
+    '@vite-pwa/nuxt',
   ],
+
+  // Installable PWA for merchants (Add to Home Screen). Precaches static assets
+  // only; navigations/API stay on the network (SSR + encrypted proxy).
+  pwa: {
+    registerType: 'autoUpdate',
+    manifest: {
+      name: 'Rekados Merchant',
+      short_name: 'Rekados Biz',
+      description: 'Manage your store, rekados, inventory and orders.',
+      theme_color: '#059669',
+      background_color: '#f8fafc',
+      display: 'standalone',
+      start_url: '/',
+      scope: '/',
+      icons: [
+        { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      navigateFallback: undefined,
+      globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+      cleanupOutdatedCaches: true,
+    },
+    devOptions: { enabled: false },
+  },
 
   css: ['~/assets/css/tailwind.css'],
 
@@ -80,6 +108,8 @@ export default defineNuxtConfig({
         'script-src': ["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"],
         'style-src': ["'self'", "'unsafe-inline'"],
         'object-src': ["'none'"],
+        'worker-src': ["'self'"],
+        'manifest-src': ["'self'"],
         'frame-ancestors': ["'none'"],
         'form-action': ["'self'"],
         // Allow XHR/fetch to same-origin and the backend API base.
