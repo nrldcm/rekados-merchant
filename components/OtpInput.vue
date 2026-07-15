@@ -90,7 +90,6 @@ const onPaste = (index: number, event: ClipboardEvent) => {
         type="text"
         inputmode="numeric"
         autocomplete="one-time-code"
-        maxlength="1"
         :disabled="props.disabled"
         :aria-invalid="!!props.error"
         class="h-12 w-10 rounded-lg border border-slate-300 bg-white text-center text-lg font-semibold text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:w-12"
