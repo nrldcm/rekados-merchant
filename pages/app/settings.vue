@@ -178,6 +178,9 @@ async function requestDeletion() {
       </div>
     </section>
 
+    <!-- Lock Mode -->
+    <LockModeSettings />
+
     <!-- Activity -->
     <section class="mb-6 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <h2 class="mb-3 text-lg font-semibold text-slate-900 dark:text-slate-100">Activity log</h2>

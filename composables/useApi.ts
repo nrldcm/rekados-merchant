@@ -76,6 +76,11 @@ export const useApi = () => {
         ?? 0
       const data = (error as { data?: unknown })?.data
 
+      // 423 Locked → Lock Mode is engaged server-side; raise the PIN overlay.
+      if (status === 423 && import.meta.client) {
+        useState<boolean>('lock:locked', () => false).value = true
+      }
+
       if (status === 401 && !skipRefresh) {
         const refreshed = await tryRefresh()
         if (refreshed) {
