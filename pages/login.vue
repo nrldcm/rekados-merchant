@@ -29,25 +29,35 @@ const mfaMethod = ref<'EMAIL' | 'SMS' | 'TOTP'>('EMAIL')
 const switchingChannel = ref(false)
 const channelNotice = ref<string | null>(null)
 
-const methodLabel = (m: string) =>
-  m === 'TOTP' ? 'Authenticator app' : m === 'SMS' ? 'Text message (SMS)' : 'Email'
+// Priority is the authenticator (2FA). Only after 3 failed codes do we offer an
+// Email/SMS fallback — and once a channel is chosen the offer disappears so it
+// can't be spammed to keep re-sending.
+const mfaFailCount = ref(0)
+const fallbackOffered = ref(false)
+const fallbackChosen = ref(false)
+const mfaLocked = ref(false)
 
-/** Pick a delivery channel: for email/SMS ask the backend to send a code. */
-async function chooseMethod(m: 'EMAIL' | 'SMS' | 'TOTP') {
+// Email/SMS channels available as a fallback, excluding the active one.
+const fallbackChannels = computed(() =>
+  (mfaChallenge.value?.availableMethods ?? []).filter(
+    (m) => (m === 'EMAIL' || m === 'SMS') && m !== mfaMethod.value,
+  ),
+)
+
+/** Choose the Email/SMS fallback: send the code, switch, then lock the choice. */
+async function chooseFallback(m: string) {
   if (!mfaChallenge.value || switchingChannel.value) return
-  mfaMethod.value = m
-  channelNotice.value = null
-  formError.value = null
-  if (m === 'TOTP') {
-    channelNotice.value = 'Enter the current code from your authenticator app.'
-    return
-  }
   switchingChannel.value = true
+  formError.value = null
   try {
     await auth.sendMfaChallenge(mfaChallenge.value.challengeToken, m)
+    mfaMethod.value = m as 'EMAIL' | 'SMS'
     channelNotice.value = m === 'SMS' ? 'We sent a code to your phone.' : 'We sent a code to your email.'
+    fallbackChosen.value = true // hide the option — no spamming a re-send/switch
+    fallbackOffered.value = false
+    mfaCode.value = ''
   } catch (err) {
-    formError.value = (err as { message?: string })?.message || 'Could not send a code. Try another method.'
+    formError.value = (err as { message?: string })?.message || 'Could not send a code. Please try again.'
   } finally {
     switchingChannel.value = false
   }
@@ -79,6 +89,11 @@ const handleSubmit = async () => {
       }
       // The backend pre-sent via a default (TOTP if set, else email).
       mfaMethod.value = (result.method as 'EMAIL' | 'SMS' | 'TOTP') ?? 'EMAIL'
+      mfaFailCount.value = 0
+      fallbackOffered.value = false
+      fallbackChosen.value = false
+      mfaLocked.value = false
+      mfaCode.value = ''
       channelNotice.value =
         result.method === 'TOTP'
           ? 'Enter the current code from your authenticator app.'
@@ -116,7 +131,23 @@ const submitMfa = async () => {
     // Only allow internal, same-origin paths (reject //host and /\host).
     await navigateTo(/^\/(?![/\\])/.test(raw) ? raw : '/app')
   } catch (err: unknown) {
-    formError.value = (err as { message?: string })?.message || 'Invalid verification code.'
+    const status = (err as { statusCode?: number })?.statusCode
+    if (status === 403) {
+      // Backend lockout — too many attempts. Stop offering fallbacks.
+      mfaLocked.value = true
+      fallbackOffered.value = false
+      formError.value =
+        (err as { message?: string })?.message ||
+        'Too many incorrect codes. Please wait a few minutes and try again.'
+    } else {
+      mfaFailCount.value += 1
+      formError.value = (err as { message?: string })?.message || 'Invalid verification code.'
+      // After 3 failed codes, offer an Email/SMS fallback (once).
+      if (mfaFailCount.value >= 3 && !fallbackChosen.value && fallbackChannels.value.length) {
+        fallbackOffered.value = true
+      }
+    }
+    mfaCode.value = ''
   } finally {
     submitting.value = false
   }
@@ -150,31 +181,35 @@ const resendVerification = async () => {
     <!-- MFA second step -->
     <form v-if="mfaChallenge" novalidate @submit.prevent="submitMfa">
       <div class="space-y-4">
-        <div>
-          <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-            How do you want to receive your code?
-          </p>
-          <div class="grid grid-cols-1 gap-2">
-            <button
-              v-for="m in mfaChallenge.availableMethods"
-              :key="m"
-              type="button"
-              :disabled="switchingChannel"
-              class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:opacity-60"
-              :class="mfaMethod === m
-                ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
-                : 'border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300'"
-              @click="chooseMethod(m as 'EMAIL' | 'SMS' | 'TOTP')"
-            >
-              <span>{{ methodLabel(m) }}</span>
-              <span v-if="mfaMethod === m" aria-hidden="true">✓</span>
-            </button>
-          </div>
-        </div>
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">
+          {{ mfaMethod === 'TOTP' ? 'Two-factor authentication' : 'Verification code' }}
+        </p>
 
         <p v-if="channelNotice" class="text-sm text-slate-600 dark:text-slate-300">
           {{ channelNotice }} You can also use a backup code.
         </p>
+
+        <!-- Fallback offer: only after 3 failed codes, and it disappears once used. -->
+        <div
+          v-if="fallbackOffered && !fallbackChosen"
+          class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20"
+        >
+          <p class="mb-2 text-amber-800 dark:text-amber-300">
+            Having trouble? Send the code to:
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="m in fallbackChannels"
+              :key="m"
+              type="button"
+              :disabled="switchingChannel"
+              class="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 disabled:opacity-60 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-300"
+              @click="chooseFallback(m)"
+            >
+              {{ m === 'SMS' ? 'Text message (SMS)' : 'Email' }}
+            </button>
+          </div>
+        </div>
 
         <TextField
           v-model="mfaCode"
@@ -189,7 +224,7 @@ const resendVerification = async () => {
           type="button"
           class="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60 dark:text-brand-400"
           :disabled="switchingChannel"
-          @click="chooseMethod(mfaMethod)"
+          @click="chooseFallback(mfaMethod)"
         >
           {{ switchingChannel ? 'Sending…' : 'Resend code' }}
         </button>
